@@ -3,14 +3,20 @@
 const express = require('express');
 const morgan = require('morgan');
 const redis = require('redis');
-const http = require('http');
+const https = require('https');
 const path = require('path');
+const fs = require('fs');
+const basicAuth = require('express-basic-auth');
 
 const config = require('../lib/config');
 const { isSpecialUser } = require('../lib/util');
 
 const IS_TEST = (config.env === 'test');
 
+const options = {
+  key: fs.readFileSync('./keys/key.pem'),
+  cert: fs.readFileSync('./keys/cert.pem')
+};
 // create a connection to the redis datastore
 let db = redis.createClient({ host: config.redis.host, port: config.redis.port });
 
@@ -27,6 +33,11 @@ db.on('error', function (err) {
 });
 
 const app = express();
+
+app.use(basicAuth({
+  users: { secureuser : config.auth.pwd },
+  challenge: true // <--- needed to actually show the login dialog!
+}));
 
 app.use(function (req, res, next) {
   if (config.enableSTS) {
@@ -108,10 +119,11 @@ app.use(express.static(website));
 if (process.argv[1] === __filename) {
   const port = config.webPort;
   console.log(`[${new Date().toISOString()}]: Starting up on port ${port} ${JSON.stringify(config)}`);
-  app.listen(port);
+  const server = https.createServer(options ,app);
+  server.listen(port);
 } else {
   module.exports = function(cb) {
-    const server = http.createServer(app);
+    const server = https.createServer(options ,app);
     server.listen(function() {
       const port = server.address().port;
       console.log(`[${new Date().toISOString()}]: Starting up on port ${port} ${JSON.stringify(config)}`);
